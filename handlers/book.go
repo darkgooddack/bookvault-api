@@ -7,12 +7,12 @@ import (
 	"github.com/darkgooddack/bookvault-api/db"
 	"github.com/darkgooddack/bookvault-api/middleware"
 	"github.com/darkgooddack/bookvault-api/models"
+	"github.com/go-playground/validator/v10"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
-// GET /books  (только свои книги)
 func GetBooks(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r)
 	if !ok {
@@ -26,36 +26,58 @@ func GetBooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(books)
+	var resp []models.BookResponse
+	for _, b := range books {
+		resp = append(resp, models.BookResponse{
+			ID:     b.ID,
+			Title:  b.Title,
+			Author: b.Author,
+			Year:   b.Year,
+			Genre:  b.Genre,
+		})
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
-// POST /books
 func CreateBook(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r)
+
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	var b models.Book
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+	var req models.CreateBookRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	b.ID = uuid.New().String()
-	b.Owner = userID
+	validate := validator.New()
+	if err := validate.Struct(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	if err := db.DB.Create(&b).Error; err != nil {
+	book := models.Book{
+		ID:     uuid.New().String(),
+		Title:  req.Title,
+		Author: req.Author,
+		Year:   req.Year,
+		Genre:  req.Genre,
+		Owner:  userID,
+	}
+
+	if err := db.DB.Create(&book).Error; err != nil {
 		http.Error(w, "failed to create book", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(b)
+	json.NewEncoder(w).Encode(book)
 }
 
-// GET /books/{id}
 func GetBookByID(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r)
 	if !ok {
@@ -75,10 +97,17 @@ func GetBookByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(b)
+	resp := models.BookResponse{
+		ID:     b.ID,
+		Title:  b.Title,
+		Author: b.Author,
+		Year:   b.Year,
+		Genre:  b.Genre,
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
-// PUT /books/{id}
 func UpdateBook(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r)
 	if !ok {
@@ -98,27 +127,42 @@ func UpdateBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var input models.Book
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	var req models.UpdateBookRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	// обновляем поля (не трогаем owner и id)
-	b.Title = input.Title
-	b.Author = input.Author
-	b.Year = input.Year
-	b.Genre = input.Genre
+	// обновляем поля
+	if req.Title != "" {
+		b.Title = req.Title
+	}
+	if req.Author != "" {
+		b.Author = req.Author
+	}
+	if req.Year != 0 {
+		b.Year = req.Year
+	}
+	if req.Genre != "" {
+		b.Genre = req.Genre
+	}
 
 	if err := db.DB.Save(&b).Error; err != nil {
 		http.Error(w, "failed to update", http.StatusInternalServerError)
 		return
 	}
 
-	json.NewEncoder(w).Encode(b)
+	resp := models.BookResponse{
+		ID:     b.ID,
+		Title:  b.Title,
+		Author: b.Author,
+		Year:   b.Year,
+		Genre:  b.Genre,
+	}
+
+	json.NewEncoder(w).Encode(resp)
 }
 
-// DELETE /books/{id}
 func DeleteBook(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r)
 	if !ok {
